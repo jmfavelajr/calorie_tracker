@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Free BMI, TDEE and calorie calculator with barcode and food name lookup.">
+  <script async custom-element="amp-auto-ads" src="https://cdn.ampproject.org/v0/amp-auto-ads-0.1.js"></script>
+  <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-2623662760040254"
+     crossorigin="anonymous"></script>
+  <title>BMI & Calorie Calculator – Free Online Tool</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <amp-auto-ads type="adsense" data-ad-client="ca-pub-2623662760040254"></amp-auto-ads>
+  <div class="container">
+    <header>
+      <h1>BMI & Calorie Calculator</h1>
+      <p class="subtitle">Body mass index, TDEE and daily calorie estimates</p>
+    </header>
+
+    <section class="auth-bar" id="authBar">
+      <div class="auth-signed-out" id="authSignedOut">
+        <button type="button" id="googleSignInBtn" class="btn btn-google">
+          <span class="google-g" aria-hidden="true">G</span>
+          Continue with Google
+        </button>
+        <p class="auth-hint" id="authHint">Sign in to save and sync food logs across devices.</p>
+      </div>
+      <div class="auth-signed-in" id="authSignedIn" hidden>
+        <div class="auth-user">
+          <img id="authAvatar" class="auth-avatar" alt="" width="36" height="36" hidden>
+          <div class="auth-user-text">
+            <div class="auth-name" id="authName">Signed in</div>
+            <div class="auth-email" id="authEmail"></div>
+          </div>
+        </div>
+        <button type="button" id="signOutBtn" class="btn btn-secondary btn-small">Sign out</button>
+      </div>
+      <p class="auth-status" id="authStatus" hidden></p>
+    </section>
+
+    <section class="diary" id="diarySection" hidden>
+      <div class="diary-header">
+        <h2 id="diaryTitle">Today</h2>
+        <div class="diary-total" id="diaryTotal">0 kcal</div>
+      </div>
+      <div class="diary-nav">
+        <button type="button" class="btn-nav" id="diaryPrev" aria-label="Previous day">‹</button>
+        <input type="date" id="diaryDate" class="diary-date">
+        <button type="button" class="btn-nav" id="diaryNext" aria-label="Next day">›</button>
+        <button type="button" class="btn-nav btn-today" id="diaryTodayBtn">Today</button>
+      </div>
+      <p class="diary-sub" id="diarySub">No foods logged yet.</p>
+      <ul class="diary-list" id="diaryList"></ul>
+    </section>
+
+    <div class="form">
+      <div class="form-row">
+        <div class="form-group"><label>Weight (kg)</label><input type="number" id="weight" value="70" step="0.1" oninput="calc()"></div>
+        <div class="form-group"><label>Height (cm)</label><input type="number" id="height" value="175" step="0.1" oninput="calc()"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Age</label><input type="number" id="age" value="30" oninput="calc()"></div>
+        <div class="form-group"><label>Sex</label>
+          <select id="sex" onchange="calc()"><option value="m">Male</option><option value="f">Female</option></select>
+        </div>
+      </div>
+      <div class="form-group"><label>Activity Level</label>
+        <select id="activity" onchange="calc()">
+          <option value="1.2">Sedentary</option>
+          <option value="1.375">Lightly active</option>
+          <option value="1.55" selected>Moderately active</option>
+          <option value="1.725">Very active</option>
+          <option value="1.9">Extra active</option>
+        </select>
+      </div>
+    </div>
+    <div class="result" id="result"></div>
+
+    <section class="food-lookup">
+      <h2>Food calorie lookup</h2>
+      <p class="section-desc">Scan a barcode, look up a packaged food, or <strong>estimate a meal</strong> from a phrase (e.g. <em>eggs benedict at IHOP</em>). Use the mic to dictate. Estimates use AI and are approximate.</p>
+
+      <div class="form food-form">
+        <div class="btn-row">
+          <button type="button" id="scanBtn" class="btn">Scan barcode</button>
+          <button type="button" id="stopScanBtn" class="btn btn-secondary" hidden>Stop camera</button>
+        </div>
+
+        <div id="scannerWrap" class="scanner-wrap" hidden>
+          <div id="reader"></div>
+          <p class="hint scan-hint">Point your camera at a UPC/EAN barcode</p>
+        </div>
+
+        <div class="form-group">
+          <label for="foodQuery">Barcode, food name, or meal phrase</label>
+          <div class="query-row">
+            <input type="text" id="foodQuery" autocomplete="off" placeholder="04963406 · 1 cup rice · eggs benedict at IHOP">
+            <button type="button" id="micBtn" class="btn-mic" title="Speak meal or food name" aria-label="Start voice input">🎤</button>
+          </div>
+          <p class="hint mic-status" id="micStatus" hidden></p>
+        </div>
+        <div class="btn-row lookup-actions">
+          <button type="button" id="lookupBtn" class="btn btn-secondary">Look up</button>
+          <button type="button" id="estimateBtn" class="btn">Estimate meal</button>
+        </div>
+        <p class="hint">Look up = databases · Estimate meal = AI for restaurant/home plates · Mic fills the box only</p>
+      </div>
+
+      <div class="result food-result" id="foodResult" hidden></div>
+
+      <div class="log-panel" id="logPanel" hidden>
+        <div class="form-row log-row">
+          <div class="form-group">
+            <label for="logQty">Quantity (servings)</label>
+            <input type="number" id="logQty" value="1" min="0.25" step="0.25">
+          </div>
+        </div>
+        <button type="button" id="logCaloriesBtn" class="btn" disabled>Log calories</button>
+        <p class="hint" id="logHint">Sign in and look up a food to log it.</p>
+        <p class="log-success" id="logSuccess" hidden></p>
+      </div>
+    </section>
+
+    <footer>
+      <p>BMI/TDEE are approximate. Packaged food from USDA / API Ninjas / Calorie API. Meal estimates are AI approximations, not lab data.</p>
+    </footer>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.1/dist/umd/supabase.min.js"></script>
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>

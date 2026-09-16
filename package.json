@@ -1,0 +1,9 @@
+{
+  "name": "bmi-calorie-calculator",
+  "version": "1.0.1",
+  "description": "BMI, BMR and TDEE calorie calculator with meal estimates.",
+  "private": true,
+  "scripts": { "start": "npx serve ." },
+  "license": "MIT",
+  "dependencies": {}
+}
