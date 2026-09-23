@@ -1,9 +1,11 @@
 {
-  "name": "bmi-calorie-calculator",
+  "name": "calories",
   "version": "1.0.1",
-  "description": "BMI, BMR and TDEE calorie calculator with meal estimates.",
+  "description": "Calories \u2014 daily calorie log with rough targets and food lookup.",
   "private": true,
-  "scripts": { "start": "npx serve ." },
+  "scripts": {
+    "start": "npx serve ."
+  },
   "license": "MIT",
   "dependencies": {}
 }

@@ -1,7 +1,8 @@
 /**
- * BMI / TDEE + food lookup via /api/fdc
+ * Calories — daily log UI
+ * Food lookup via /api/fdc
  * Meal estimates via /api/meal-estimate (Grok)
- * Speech-to-text via Web Speech API (fills query only)
+ * Speech-to-text via Web Speech API
  * Auth: Supabase Google OAuth
  * Logging + diary via food_logs
  */
@@ -10,6 +11,9 @@ const FDC_PROXY = '/api/fdc';
 const ESTIMATE_URL = '/api/meal-estimate';
 const CONFIG_URL = '/api/config';
 const LOG_COOLDOWN_MS = 1500;
+const TARGET_DEFICIT_KEY = 'calories_target_deficit_kcal';
+const TARGET_TDEE_KEY = 'calories_target_tdee_kcal';
+const BMI_INPUTS_KEY = 'calories_bmi_inputs';
 
 let html5QrCode = null;
 let scanBusy = false;
@@ -20,6 +24,25 @@ let logCooldownedUntil = 0;
 let diaryViewDate = startOfLocalDay(new Date());
 let speechRecognition = null;
 let speechListening = false;
+let diaryLoadError = false;
+let diaryLoading = false;
+let lastDiaryRows = [];
+let bodyEstimateExpanded = true;
+
+const REGION_ORDER_SIGNED_OUT = [
+  'auth-google',
+  'diary-gate',
+  'body-estimate',
+  'add-food',
+];
+
+const REGION_ORDER_SIGNED_IN = [
+  'today',
+  'add-food',
+  'diary-list',
+  'body-estimate',
+  'auth-signout',
+];
 
 function startOfLocalDay(d) {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate());
@@ -48,14 +71,212 @@ function dayBoundsIso(day) {
   return { start: start.toISOString(), end: end.toISOString() };
 }
 
-function calc() {
+function escapeHtml(s) {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function formatKcal(n) {
+  const v = Math.round(Number(n) || 0);
+  return v.toLocaleString();
+}
+
+function getStoredTargets() {
+  const deficit = parseInt(localStorage.getItem(TARGET_DEFICIT_KEY) || '', 10);
+  const tdee = parseInt(localStorage.getItem(TARGET_TDEE_KEY) || '', 10);
+  return {
+    deficit: Number.isFinite(deficit) && deficit > 0 ? deficit : null,
+    tdee: Number.isFinite(tdee) && tdee > 0 ? tdee : null,
+  };
+}
+
+function getActiveTarget() {
+  const t = getStoredTargets();
+  if (t.deficit) return { kcal: t.deficit, kind: 'deficit' };
+  if (t.tdee) return { kcal: t.tdee, kind: 'tdee' };
+  return null;
+}
+
+function saveTargets(tdee, deficit) {
+  if (Number.isFinite(tdee) && tdee > 0) localStorage.setItem(TARGET_TDEE_KEY, String(Math.round(tdee)));
+  if (Number.isFinite(deficit) && deficit > 0) localStorage.setItem(TARGET_DEFICIT_KEY, String(Math.round(deficit)));
+}
+
+function saveBmiInputs() {
+  try {
+    localStorage.setItem(BMI_INPUTS_KEY, JSON.stringify({
+      weight: document.getElementById('weight').value,
+      height: document.getElementById('height').value,
+      age: document.getElementById('age').value,
+      sex: document.getElementById('sex').value,
+      activity: document.getElementById('activity').value,
+    }));
+  } catch (e) {}
+}
+
+function restoreBmiInputs() {
+  try {
+    const raw = localStorage.getItem(BMI_INPUTS_KEY);
+    if (!raw) return;
+    const data = JSON.parse(raw);
+    ['weight', 'height', 'age', 'sex', 'activity'].forEach((id) => {
+      const el = document.getElementById(id);
+      if (el && data[id] != null) el.value = data[id];
+    });
+  } catch (e) {}
+}
+
+function reorderRegions(signedIn) {
+  const stack = document.getElementById('appStack');
+  if (!stack) return;
+  const order = signedIn ? REGION_ORDER_SIGNED_IN : REGION_ORDER_SIGNED_OUT;
+  order.forEach((name) => {
+    const el = stack.querySelector(`[data-region="${name}"]`);
+    if (el) stack.appendChild(el);
+  });
+}
+
+function setExclusiveAuth(signedIn) {
+  const googleSection = document.getElementById('authGoogleSection');
+  const signOutSection = document.getElementById('authSignOutSection');
+  const googleBtn = document.getElementById('googleSignInBtn');
+  const signOutBtn = document.getElementById('signOutBtn');
+
+  if (signedIn) {
+    if (googleBtn) googleBtn.remove();
+    if (googleSection) googleSection.hidden = true;
+    if (signOutSection) {
+      signOutSection.hidden = false;
+      if (!document.getElementById('signOutBtn')) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.id = 'signOutBtn';
+        btn.className = 'btn btn-secondary btn-auth';
+        btn.textContent = 'Sign out';
+        signOutSection.insertBefore(btn, signOutSection.firstChild);
+        bindSignOut(btn);
+      }
+    }
+  } else {
+    if (signOutBtn) signOutBtn.remove();
+    if (signOutSection) signOutSection.hidden = true;
+    if (googleSection) {
+      googleSection.hidden = false;
+      if (!document.getElementById('googleSignInBtn')) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.id = 'googleSignInBtn';
+        btn.className = 'btn btn-accent btn-auth';
+        btn.innerHTML = '<span class="google-g" aria-hidden="true">G</span> Continue with Google';
+        googleSection.insertBefore(btn, googleSection.firstChild);
+        bindGoogleSignIn(btn);
+      }
+    }
+  }
+}
+
+function syncBodyEstimateDisclosure(forceExpand) {
+  const hasTarget = !!getActiveTarget();
+  const panel = document.getElementById('bodyEstimatePanel');
+  const toggle = document.getElementById('bodyEstimateToggle');
+  const summary = document.getElementById('bodyEstimateSummary');
+  if (!panel || !toggle || !summary) return;
+
+  if (forceExpand === true) bodyEstimateExpanded = true;
+  else if (forceExpand === false) bodyEstimateExpanded = false;
+  else if (!hasTarget) {
+    bodyEstimateExpanded = true;
+  }
+
+  panel.hidden = !bodyEstimateExpanded;
+  toggle.setAttribute('aria-expanded', bodyEstimateExpanded ? 'true' : 'false');
+
+  const target = getActiveTarget();
+  if (!bodyEstimateExpanded && target) {
+    summary.textContent = `Rough target ${formatKcal(target.kcal)} kcal`;
+    toggle.setAttribute('aria-label', 'Edit estimate, collapsed');
+  } else {
+    summary.textContent = bodyEstimateExpanded
+      ? 'Rough body estimate'
+      : (target ? `Rough target ${formatKcal(target.kcal)} kcal` : 'Rough body estimate');
+    toggle.setAttribute(
+      'aria-label',
+      bodyEstimateExpanded ? 'Rough body estimate, expanded' : 'Edit estimate, collapsed'
+    );
+  }
+}
+
+function expandBodyEstimateAndFocus() {
+  bodyEstimateExpanded = true;
+  const toggle = document.getElementById('bodyEstimateToggle');
+  if (toggle) toggle.dataset.userToggled = '1';
+  syncBodyEstimateDisclosure(true);
+  const weight = document.getElementById('weight');
+  if (weight) weight.focus();
+}
+
+function updateProgressUi(sum) {
+  const fill = document.getElementById('progressFill');
+  const text = document.getElementById('progressText');
+  const wrap = document.getElementById('progressWrap');
+  if (!fill || !text || !wrap) return;
+
+  if (diaryLoading) {
+    fill.style.width = '0%';
+    fill.className = 'progress-fill';
+    text.textContent = '';
+    wrap.hidden = false;
+    return;
+  }
+
+  if (diaryLoadError) {
+    fill.style.width = '0%';
+    fill.className = 'progress-fill';
+    text.textContent = '';
+    return;
+  }
+
+  const target = getActiveTarget();
+  if (!target) {
+    fill.style.width = '0%';
+    fill.className = 'progress-fill';
+    text.innerHTML =
+      'Set a rough target below to see progress. ' +
+      '<button type="button" class="progress-link" id="openTargetLink">Set target</button>';
+    const link = document.getElementById('openTargetLink');
+    if (link) link.addEventListener('click', expandBodyEstimateAndFocus);
+    return;
+  }
+
+  const pct = Math.min(100, Math.round((sum / target.kcal) * 100));
+  const over = sum > target.kcal;
+  fill.style.width = (over ? 100 : pct) + '%';
+  fill.className = 'progress-fill' + (over ? ' over' : sum > 0 ? ' under' : '');
+
+  if (over) {
+    const amt = Math.round(sum - target.kcal);
+    text.textContent = `${formatKcal(sum)} of ${formatKcal(target.kcal)} kcal · ${formatKcal(amt)} over target`;
+  } else {
+    text.textContent = `${formatKcal(sum)} of ${formatKcal(target.kcal)} kcal`;
+  }
+}
+
+function calc(persistTargets) {
   const w = parseFloat(document.getElementById('weight').value) || 0;
   const h = parseFloat(document.getElementById('height').value) || 0;
   const age = parseFloat(document.getElementById('age').value) || 0;
   const sex = document.getElementById('sex').value;
   const act = parseFloat(document.getElementById('activity').value);
+  const resultEl = document.getElementById('result');
 
-  if (w <= 0 || h <= 0) return;
+  if (w <= 0 || h <= 0 || age <= 0) {
+    resultEl.innerHTML = '';
+    return;
+  }
+
   const bmi = w / Math.pow(h / 100, 2);
   let category = 'Normal';
   if (bmi < 18.5) category = 'Underweight';
@@ -63,18 +284,32 @@ function calc() {
   else if (bmi < 30) category = 'Overweight';
   else category = 'Obese';
 
-  let bmr = sex === 'm' ? 10 * w + 6.25 * h - 5 * age + 5 : 10 * w + 6.25 * h - 5 * age - 161;
+  const bmr = sex === 'm' ? 10 * w + 6.25 * h - 5 * age + 5 : 10 * w + 6.25 * h - 5 * age - 161;
   const tdee = bmr * act;
+  const mild = tdee - 300;
+  const aggressive = tdee - 500;
 
-  document.getElementById('result').innerHTML = `
-    <div>BMI</div>
-    <div class="big">${bmi.toFixed(1)} <span style="font-size:1rem;font-weight:500">(${category})</span></div>
-    <div style="margin-top:14px">BMR (basal): ~${Math.round(bmr)} kcal/day</div>
-    <div>TDEE (maintenance): ~${Math.round(tdee)} kcal/day</div>
-    <div style="margin-top:8px;color:var(--muted);font-size:0.85rem">
-      Mild deficit (−300): ${Math.round(tdee - 300)} · Aggressive (−500): ${Math.round(tdee - 500)}
+  if (persistTargets) {
+    saveTargets(tdee, mild);
+    saveBmiInputs();
+  }
+
+  resultEl.innerHTML = `
+    <div>BMI <span class="estimate-caption">(estimate)</span></div>
+    <div class="big">${bmi.toFixed(1)} <span class="unit">(${escapeHtml(category)})</span></div>
+    <div style="margin-top:14px">BMR (basal): ~${Math.round(bmr)} kcal/day <span class="estimate-caption">estimate</span></div>
+    <div>TDEE (maintenance): ~${Math.round(tdee)} kcal/day <span class="estimate-caption">estimate</span></div>
+    <div style="margin-top:8px;color:var(--text-secondary);font-size:0.9rem">
+      Mild deficit (−300): ${Math.round(mild)} · Aggressive (−500): ${Math.round(aggressive)}
     </div>
+    <p class="estimate-caption" style="margin-top:10px">Progress uses the mild deficit as your rough target.</p>
   `;
+
+  syncBodyEstimateDisclosure();
+  if (currentUser) {
+    const sum = (lastDiaryRows || []).reduce((a, r) => a + (Number(r.kcal_logged) || 0), 0);
+    updateProgressUi(sum);
+  }
 }
 
 function showFoodResult(html, isError) {
@@ -123,14 +358,6 @@ function bindResultCarousel(root) {
   setActive();
 }
 
-function escapeHtml(s) {
-  return String(s)
-    .replace(/&/g, '&')
-    .replace(/</g, '<')
-    .replace(/>/g, '>')
-    .replace(/"/g, '"');
-}
-
 function sourceLabel(src) {
   if (src === 'usda') return 'USDA FoodData Central';
   if (src === 'calorieapi') return 'Calorie API';
@@ -167,8 +394,11 @@ function setMicListeningUi(on) {
   if (!btn) return;
   speechListening = !!on;
   btn.classList.toggle('listening', !!on);
-  btn.setAttribute('aria-label', on ? 'Stop voice input' : 'Start voice input');
-  btn.title = on ? 'Listening — tap to stop' : 'Speak meal or food name';
+  btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+  btn.setAttribute('aria-label', on ? 'Dictate food' : 'Dictate food');
+  btn.title = on ? 'Listening…' : 'Dictate food';
+  const label = btn.querySelector('.mic-label');
+  if (label) label.textContent = on ? 'Listening…' : '';
 }
 
 function getSpeechRecognitionCtor() {
@@ -188,7 +418,7 @@ function toggleSpeechInput() {
   const Ctor = getSpeechRecognitionCtor();
   const btn = document.getElementById('micBtn');
   if (!Ctor) {
-    setMicStatus('Voice input not supported in this browser. Type instead (Chrome works best).', true);
+    setMicStatus('Microphone not supported in this browser. Type a food name instead (Chrome works best).', true);
     if (btn) btn.disabled = true;
     return;
   }
@@ -208,7 +438,7 @@ function toggleSpeechInput() {
 
     speechRecognition.onstart = () => {
       setMicListeningUi(true);
-      setMicStatus('Listening… tap mic to stop');
+      setMicStatus('Listening…');
     };
 
     speechRecognition.onresult = (event) => {
@@ -223,7 +453,7 @@ function toggleSpeechInput() {
       if (!input) return;
       if (finalText) {
         input.value = finalText.trim();
-        setMicStatus('Got it — edit if needed, then Look up or Estimate meal.');
+        setMicStatus('Got it — edit if needed, then Look up or Estimate.');
         try { speechRecognition.abort(); } catch (e) {}
       } else if (interim) {
         input.value = interim.trim();
@@ -235,9 +465,9 @@ function toggleSpeechInput() {
       setMicListeningUi(false);
       const err = event && event.error;
       if (err === 'not-allowed' || err === 'service-not-allowed') {
-        setMicStatus('Microphone permission denied. Allow mic access or type instead.', true);
+        setMicStatus('Microphone permission denied. Allow mic access in the browser, or type instead.', true);
       } else if (err === 'no-speech') {
-        setMicStatus('No speech detected. Try again.');
+        setMicStatus('No speech detected. Try again or type a name.');
       } else if (err === 'aborted') {
         setMicStatus('');
       } else {
@@ -282,7 +512,7 @@ function renderFoodCard(food, extrasHtml) {
   const isEstimate = food.source === 'grok_estimate';
   const brandLine = [food.brand, food.category].filter(Boolean).join(' · ');
   const badge = isEstimate
-    ? `<span class="estimate-badge">Estimate${food.confidence ? ' · ' + escapeHtml(food.confidence) : ''}</span>`
+    ? `<span class="estimate-badge">Estimate, not a database value${food.confidence ? ' · ' + escapeHtml(food.confidence) : ''}</span>`
     : '';
 
   let calBlock = '';
@@ -445,51 +675,68 @@ function syncDiaryChrome() {
 }
 
 function clearDiaryUi() {
-  const section = document.getElementById('diarySection');
+  const todaySection = document.getElementById('todaySection');
+  const listSection = document.getElementById('diarySection');
   const list = document.getElementById('diaryList');
   const total = document.getElementById('diaryTotal');
   const sub = document.getElementById('diarySub');
-  if (section) section.hidden = true;
+  const err = document.getElementById('todayError');
+  if (todaySection) todaySection.hidden = true;
+  if (listSection) listSection.hidden = true;
   if (list) list.innerHTML = '';
-  if (total) total.textContent = '0 kcal';
-  if (sub) sub.textContent = 'Sign in to see your food log.';
+  if (total) total.textContent = '0';
+  if (sub) sub.textContent = '';
+  if (err) err.hidden = true;
+  lastDiaryRows = [];
+  diaryLoadError = false;
+  diaryLoading = false;
 }
 
 function renderDiary(rows) {
-  const section = document.getElementById('diarySection');
+  const todaySection = document.getElementById('todaySection');
+  const listSection = document.getElementById('diarySection');
   const list = document.getElementById('diaryList');
   const totalEl = document.getElementById('diaryTotal');
   const sub = document.getElementById('diarySub');
-  if (!section || !list) return;
+  const err = document.getElementById('todayError');
+  if (!todaySection || !list) return;
 
-  section.hidden = false;
+  todaySection.hidden = false;
+  diaryLoadError = false;
+  diaryLoading = false;
+  if (err) err.hidden = true;
   syncDiaryChrome();
 
   const items = rows || [];
+  lastDiaryRows = items;
   let sum = 0;
   items.forEach((r) => { sum += Number(r.kcal_logged) || 0; });
-  totalEl.textContent = Math.round(sum) + ' kcal';
+  totalEl.textContent = formatKcal(sum);
+  updateProgressUi(sum);
 
   if (!items.length) {
-    sub.textContent = 'No foods logged for this day.';
+    sub.textContent = 'Nothing logged for this day.';
     list.innerHTML = '';
+    if (listSection) listSection.hidden = true;
     return;
   }
 
   sub.textContent = items.length + (items.length === 1 ? ' item' : ' items');
+  if (listSection) listSection.hidden = false;
   list.innerHTML = items.map((r) => {
     const qty = r.quantity != null ? r.quantity : 1;
     const label = r.serving_label ? ` · ${escapeHtml(String(r.serving_label))}` : '';
     const time = formatLogTime(r.created_at);
+    const name = r.name || 'Food';
     return `
       <li class="diary-item" data-id="${r.id}">
         <div class="diary-item-main">
-          <div class="diary-item-name">${escapeHtml(r.name || 'Food')}</div>
+          <div class="diary-item-name">${escapeHtml(name)}</div>
           <div class="diary-item-meta">${escapeHtml(String(qty))}×${label}${time ? ' · ' + escapeHtml(time) : ''}</div>
         </div>
         <div class="diary-item-actions">
           <div class="diary-item-kcal">${Math.round(Number(r.kcal_logged) || 0)}</div>
-          <button type="button" class="btn-delete" data-delete-id="${r.id}">Remove</button>
+          <button type="button" class="btn-delete" data-delete-id="${r.id}" aria-label="Remove ${escapeHtml(name)}">Remove</button>
         </div>
       </li>`;
   }).join('');
@@ -500,15 +747,28 @@ function renderDiary(rows) {
 }
 
 async function loadDiary() {
-  const section = document.getElementById('diarySection');
+  const todaySection = document.getElementById('todaySection');
+  const listSection = document.getElementById('diarySection');
+  const sub = document.getElementById('diarySub');
+  const err = document.getElementById('todayError');
+  const totalEl = document.getElementById('diaryTotal');
+  const list = document.getElementById('diaryList');
+
   if (!currentUser || !supabase) {
     clearDiaryUi();
     return;
   }
 
-  section.hidden = false;
+  todaySection.hidden = false;
   syncDiaryChrome();
-  document.getElementById('diarySub').textContent = 'Loading…';
+  diaryLoading = true;
+  diaryLoadError = false;
+  if (err) err.hidden = true;
+  if (sub) sub.textContent = 'Loading day…';
+  if (totalEl) totalEl.textContent = '—';
+  if (list) list.innerHTML = '';
+  if (listSection) listSection.hidden = true;
+  updateProgressUi(0);
 
   const { start, end } = dayBoundsIso(diaryViewDate);
   try {
@@ -521,11 +781,15 @@ async function loadDiary() {
 
     if (error) throw error;
     renderDiary(data || []);
-  } catch (err) {
-    document.getElementById('diarySub').textContent =
-      (err && err.message) ? err.message : 'Could not load log.';
-    document.getElementById('diaryList').innerHTML = '';
-    document.getElementById('diaryTotal').textContent = '—';
+  } catch (e) {
+    diaryLoading = false;
+    diaryLoadError = true;
+    if (sub) sub.textContent = '';
+    if (totalEl) totalEl.textContent = '—';
+    if (list) list.innerHTML = '';
+    if (listSection) listSection.hidden = true;
+    if (err) err.hidden = false;
+    updateProgressUi(0);
   }
 }
 
@@ -554,17 +818,27 @@ async function deleteLogEntry(id) {
   }
 }
 
+function isValidQuantity() {
+  const qtyInput = document.getElementById('logQty');
+  const qty = parseFloat(qtyInput && qtyInput.value);
+  return Number.isFinite(qty) && qty > 0;
+}
+
 function updateLogControls() {
   const panel = document.getElementById('logPanel');
   const btn = document.getElementById('logCaloriesBtn');
   const hint = document.getElementById('logHint');
+  const qtyError = document.getElementById('qtyError');
   if (!panel || !btn) return;
 
   const hasResult = !!lastFoodResult && !lastFoodResult._isError;
   const kcalInfo = hasResult ? baseKcalForLog(lastFoodResult) : null;
   const signedIn = !!currentUser;
+  const qtyOk = isValidQuantity();
 
   panel.hidden = !hasResult;
+
+  if (qtyError) qtyError.hidden = !hasResult || qtyOk;
 
   if (!hasResult) {
     btn.disabled = true;
@@ -573,13 +847,19 @@ function updateLogControls() {
 
   if (!signedIn) {
     btn.disabled = true;
-    hint.textContent = 'Sign in with Google to log this food.';
+    hint.textContent = 'Sign in with Google to add this to your diary.';
     return;
   }
 
   if (!kcalInfo) {
     btn.disabled = true;
     hint.textContent = 'No calorie value available to log for this item.';
+    return;
+  }
+
+  if (!qtyOk) {
+    btn.disabled = true;
+    hint.textContent = 'Enter a quantity.';
     return;
   }
 
@@ -622,8 +902,12 @@ async function logCalories() {
   const kcalInfo = baseKcalForLog(lastFoodResult);
   if (!kcalInfo) return;
 
+  if (!isValidQuantity()) {
+    updateLogControls();
+    return;
+  }
+
   let qty = parseFloat(qtyInput.value);
-  if (!Number.isFinite(qty) || qty <= 0) qty = 1;
   qtyInput.value = String(qty);
 
   const kcalLogged = Math.round(kcalInfo.kcal * qty);
@@ -631,7 +915,7 @@ async function logCalories() {
 
   btn.disabled = true;
   const prevLabel = btn.textContent;
-  btn.textContent = 'Logging…';
+  btn.textContent = 'Saving…';
 
   const row = {
     user_id: currentUser.id,
@@ -654,26 +938,27 @@ async function logCalories() {
     const { error } = await supabase.from('food_logs').insert(row);
     if (error) throw error;
 
-    showLogSuccess(`Logged ${kcalLogged} kcal · ${food.name || 'item'}`);
+    showLogSuccess('Added.');
     logCooldownedUntil = Date.now() + LOG_COOLDOWN_MS;
     setTimeout(updateLogControls, LOG_COOLDOWN_MS + 50);
-    diaryViewDate = startOfLocalDay(new Date());
+
+    lastFoodResult = null;
+    document.getElementById('foodResult').hidden = true;
+    document.getElementById('foodResult').innerHTML = '';
+    document.getElementById('foodQuery').value = '';
+    qtyInput.value = '1';
+    updateLogControls();
+
     await loadDiary();
+    const q = document.getElementById('foodQuery');
+    if (q) q.focus();
   } catch (err) {
     const msg = err && err.message ? err.message : 'Log failed';
     const success = document.getElementById('logSuccess');
     if (success) {
       success.hidden = false;
-      success.style.color = 'var(--danger)';
-      success.style.borderColor = 'rgba(255,107,107,0.35)';
-      success.style.background = 'rgba(255,107,107,0.12)';
       success.textContent = msg;
-      setTimeout(() => {
-        success.hidden = true;
-        success.style.color = '';
-        success.style.borderColor = '';
-        success.style.background = '';
-      }, 5000);
+      setTimeout(() => { success.hidden = true; }, 5000);
     }
   } finally {
     btn.textContent = prevLabel;
@@ -687,7 +972,7 @@ async function estimateMeal(forcedValue) {
   const raw = forcedValue != null ? String(forcedValue) : (input.value || '').trim();
   if (!raw) {
     lastFoodResult = null;
-    showFoodResult('Describe a meal (e.g. eggs benedict with hash browns at IHOP).', true);
+    showFoodResult('Describe a meal, then tap Estimate.', true);
     updateLogControls();
     return;
   }
@@ -696,14 +981,16 @@ async function estimateMeal(forcedValue) {
 
   const btn = document.getElementById('estimateBtn');
   const lookupBtn = document.getElementById('lookupBtn');
+  const scanBtn = document.getElementById('scanBtn');
   btn.disabled = true;
   lookupBtn.disabled = true;
+  if (scanBtn) scanBtn.disabled = true;
   const prev = btn.textContent;
   btn.textContent = 'Estimating…';
   lastFoodResult = null;
   updateLogControls();
   document.getElementById('logSuccess').hidden = true;
-  showFoodResult('Estimating meal calories…', false);
+  showFoodResult('Estimating…', false);
 
   try {
     const res = await fetch(ESTIMATE_URL, {
@@ -720,7 +1007,7 @@ async function estimateMeal(forcedValue) {
     const results = data.results || [];
     if (!results.length) {
       lastFoodResult = { _isError: true };
-      showFoodResult('No estimate returned for that phrase.', true);
+      showFoodResult('No estimate returned. Try another description.', true);
       updateLogControls();
       return;
     }
@@ -730,11 +1017,12 @@ async function estimateMeal(forcedValue) {
     updateLogControls();
   } catch (err) {
     lastFoodResult = { _isError: true };
-    showFoodResult(escapeHtml(err.message || 'Estimate failed.'), true);
+    showFoodResult(escapeHtml(err.message || 'Estimate failed. Try again.'), true);
     updateLogControls();
   } finally {
     btn.disabled = false;
     lookupBtn.disabled = false;
+    if (scanBtn) scanBtn.disabled = false;
     btn.textContent = prev;
   }
 }
@@ -745,7 +1033,7 @@ async function lookupFood(forcedValue) {
   const raw = forcedValue != null ? String(forcedValue) : (input.value || '').trim();
   if (!raw) {
     lastFoodResult = null;
-    showFoodResult('Enter a barcode or a food name.', true);
+    showFoodResult('Enter a food name or barcode.', true);
     updateLogControls();
     return;
   }
@@ -754,18 +1042,17 @@ async function lookupFood(forcedValue) {
 
   const btn = document.getElementById('lookupBtn');
   const estimateBtn = document.getElementById('estimateBtn');
+  const scanBtn = document.getElementById('scanBtn');
   btn.disabled = true;
   if (estimateBtn) estimateBtn.disabled = true;
+  if (scanBtn) scanBtn.disabled = true;
   btn.textContent = 'Looking up…';
   lastFoodResult = null;
   updateLogControls();
   document.getElementById('logSuccess').hidden = true;
 
   const isBarcode = looksLikeBarcode(raw);
-  showFoodResult(
-    isBarcode ? 'Searching USDA → Calorie API…' : 'Searching API Ninjas → Calorie API…',
-    false
-  );
+  showFoodResult('Looking up…', false);
 
   try {
     const url = isBarcode
@@ -782,15 +1069,9 @@ async function lookupFood(forcedValue) {
 
     const results = data.results || [];
     if (!results.length) {
-      const tried = (data.sourcesTried || []).join(', ') || 'configured sources';
-      const notes = data.notes && data.notes.length
-        ? `<div class="food-meta" style="margin-top:8px">${escapeHtml(data.notes.join(' · '))}</div>`
-        : '';
       lastFoodResult = { _isError: true };
       showFoodResult(
-        `No database results for <strong>${escapeHtml(raw)}</strong>.` +
-        `<div class="food-meta">Tried: ${escapeHtml(tried)}</div>${notes}` +
-        `<div class="food-meta" style="margin-top:10px">Try <strong>Estimate meal</strong> for restaurant or homemade dishes.</div>`,
+        `No match for ‘${escapeHtml(raw)}’. Try another name or estimate the meal.`,
         true
       );
       updateLogControls();
@@ -800,7 +1081,7 @@ async function lookupFood(forcedValue) {
     lastFoodResult = results[0];
     let extras = '';
     if (results.length > 1) {
-      extras = `<div class="food-meta" style="margin-top:12px">Other matches:</div><ul style="margin:6px 0 0 18px;color:var(--muted);font-size:0.85rem">`;
+      extras = `<div class="food-meta" style="margin-top:12px">Other matches:</div><ul style="margin:6px 0 0 18px;color:var(--text-secondary);font-size:0.85rem">`;
       results.slice(1, 4).forEach((r) => {
         const kcal = r.servingKcal != null ? `${r.servingKcal} kcal` : (r.kcalPer100 != null ? `${r.kcalPer100} kcal/100g` : '');
         extras += `<li>${escapeHtml(r.name || '')}${kcal ? ' — ' + kcal : ''} <span>(${escapeHtml(sourceLabel(r.source))})</span></li>`;
@@ -811,11 +1092,12 @@ async function lookupFood(forcedValue) {
     updateLogControls();
   } catch (err) {
     lastFoodResult = { _isError: true };
-    showFoodResult(escapeHtml(err.message || 'Lookup failed.'), true);
+    showFoodResult(escapeHtml(err.message || 'Lookup failed. Check your connection and try again.'), true);
     updateLogControls();
   } finally {
     btn.disabled = false;
     if (estimateBtn) estimateBtn.disabled = false;
+    if (scanBtn) scanBtn.disabled = false;
     btn.textContent = 'Look up';
   }
 }
@@ -834,6 +1116,7 @@ async function startScanner() {
   scanBtn.hidden = true;
   stopBtn.hidden = false;
   scanBusy = false;
+  scanBtn.textContent = 'Scanning…';
 
   if (!html5QrCode) html5QrCode = new Html5Qrcode('reader');
 
@@ -872,11 +1155,12 @@ async function startScanner() {
     wrap.hidden = true;
     scanBtn.hidden = false;
     stopBtn.hidden = true;
+    scanBtn.textContent = 'Scan';
     const msg = String(err && err.message ? err.message : err);
     if (/NotAllowedError|Permission/i.test(msg)) {
-      showFoodResult('Camera permission denied. Allow camera access or enter the barcode manually.', true);
+      showFoodResult('Camera permission denied. Allow camera access, or type the barcode.', true);
     } else if (/NotFoundError|DevicesNotFound/i.test(msg)) {
-      showFoodResult('No camera found on this device.', true);
+      showFoodResult('No camera found on this device. Type the barcode instead.', true);
     } else {
       showFoodResult('Could not start camera: ' + escapeHtml(msg), true);
     }
@@ -899,11 +1183,13 @@ async function stopScanner() {
   wrap.hidden = true;
   scanBtn.hidden = false;
   stopBtn.hidden = true;
+  scanBtn.textContent = 'Scan';
   scanBusy = false;
 }
 
 function setAuthStatus(msg, isError) {
-  const el = document.getElementById('authStatus');
+  const el = document.getElementById('authStatus') || document.getElementById('signOutStatus');
+  if (!el) return;
   if (!msg) {
     el.hidden = true;
     el.textContent = '';
@@ -915,51 +1201,119 @@ function setAuthStatus(msg, isError) {
   el.classList.toggle('error', !!isError);
 }
 
+function updateAddFoodCopy(signedIn) {
+  const title = document.getElementById('addFoodTitle');
+  const helper = document.getElementById('addFoodHelper');
+  if (title) title.textContent = signedIn ? 'Add food' : 'Food calorie lookup';
+  if (helper) {
+    helper.textContent = signedIn
+      ? 'You can also scan a barcode, estimate a meal, or use the mic.'
+      : 'Try a lookup before signing in. Adding to your diary needs a Google account.';
+  }
+}
+
 function renderAuthUi(user) {
-  const signedOut = document.getElementById('authSignedOut');
-  const signedIn = document.getElementById('authSignedIn');
-  const nameEl = document.getElementById('authName');
-  const emailEl = document.getElementById('authEmail');
-  const avatar = document.getElementById('authAvatar');
+  const headerEmail = document.getElementById('headerEmail');
+  const diaryGate = document.getElementById('diaryGate');
 
   currentUser = user || null;
+  const signedIn = !!user;
+
+  setExclusiveAuth(signedIn);
+  reorderRegions(signedIn);
+  updateAddFoodCopy(signedIn);
 
   if (!user) {
-    signedOut.hidden = false;
-    signedIn.hidden = true;
-    avatar.hidden = true;
-    avatar.removeAttribute('src');
+    if (headerEmail) {
+      headerEmail.hidden = true;
+      headerEmail.textContent = '';
+      headerEmail.removeAttribute('title');
+    }
+    if (diaryGate) diaryGate.hidden = false;
+    bodyEstimateExpanded = true;
+    const toggle = document.getElementById('bodyEstimateToggle');
+    if (toggle) delete toggle.dataset.userToggled;
+    syncBodyEstimateDisclosure(true);
     updateLogControls();
     clearDiaryUi();
     return;
   }
 
-  signedOut.hidden = true;
-  signedIn.hidden = false;
+  if (headerEmail) {
+    headerEmail.hidden = false;
+    headerEmail.textContent = user.email || 'Signed in';
+    headerEmail.title = user.email || '';
+  }
+  if (diaryGate) diaryGate.hidden = true;
 
-  const meta = user.user_metadata || {};
-  const name = meta.full_name || meta.name || user.email || 'Signed in';
-  nameEl.textContent = name;
-  emailEl.textContent = user.email || '';
-
-  if (meta.avatar_url) {
-    avatar.src = meta.avatar_url;
-    avatar.hidden = false;
+  const toggle = document.getElementById('bodyEstimateToggle');
+  if (getActiveTarget() && !(toggle && toggle.dataset.userToggled)) {
+    syncBodyEstimateDisclosure(false);
+  } else if (!getActiveTarget()) {
+    syncBodyEstimateDisclosure(true);
   } else {
-    avatar.hidden = true;
+    syncBodyEstimateDisclosure();
   }
   updateLogControls();
   diaryViewDate = startOfLocalDay(new Date());
   loadDiary();
 }
 
+function bindGoogleSignIn(btn) {
+  if (!btn || btn.dataset.bound) return;
+  btn.dataset.bound = '1';
+  btn.addEventListener('click', async () => {
+    setAuthStatus('');
+    if (!supabase) {
+      setAuthStatus('Auth not ready. Refresh and try again.', true);
+      return;
+    }
+    btn.disabled = true;
+    const prevHtml = btn.innerHTML;
+    btn.textContent = 'Signing in…';
+    try {
+      const redirectTo = window.location.origin + window.location.pathname;
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo,
+          queryParams: { prompt: 'select_account' },
+        },
+      });
+      if (error) throw error;
+    } catch (err) {
+      setAuthStatus(err.message || 'Sign-in failed or was cancelled.', true);
+      btn.disabled = false;
+      btn.innerHTML = prevHtml;
+    }
+  });
+}
+
+function bindSignOut(btn) {
+  if (!btn || btn.dataset.bound) return;
+  btn.dataset.bound = '1';
+  btn.addEventListener('click', async () => {
+    setAuthStatus('');
+    btn.disabled = true;
+    const prev = btn.textContent;
+    btn.textContent = 'Signing out…';
+    try {
+      await supabase.auth.signOut();
+      renderAuthUi(null);
+    } catch (err) {
+      setAuthStatus(err.message || 'Sign-out failed.', true);
+      btn.disabled = false;
+      btn.textContent = prev;
+    }
+  });
+}
+
 async function initAuth() {
   const btn = document.getElementById('googleSignInBtn');
-  const signOutBtn = document.getElementById('signOutBtn');
 
   if (typeof window.supabase === 'undefined') {
     setAuthStatus('Auth library failed to load. Refresh and try again.', true);
-    btn.disabled = true;
+    if (btn) btn.disabled = true;
     return;
   }
 
@@ -969,20 +1323,20 @@ async function initAuth() {
     cfg = await res.json();
   } catch (e) {
     setAuthStatus('Could not load auth config.', true);
-    btn.disabled = true;
+    if (btn) btn.disabled = true;
     return;
   }
 
   if (!cfg.authConfigured || !cfg.supabaseUrl || !cfg.supabaseAnonKey) {
     setAuthStatus('Auth not configured. Set SUPABASE_URL and SUPABASE_ANON_KEY on Cloudflare Pages, then redeploy.', true);
-    btn.disabled = true;
+    if (btn) btn.disabled = true;
     return;
   }
 
   const createClient = window.supabase.createClient;
   if (!createClient) {
     setAuthStatus('Supabase client missing.', true);
-    btn.disabled = true;
+    if (btn) btn.disabled = true;
     return;
   }
 
@@ -1005,40 +1359,33 @@ async function initAuth() {
     renderAuthUi(session && session.user);
   });
 
-  btn.addEventListener('click', async () => {
-    setAuthStatus('');
-    btn.disabled = true;
-    const prev = btn.textContent;
-    btn.textContent = 'Redirecting…';
-    try {
-      const redirectTo = window.location.origin + window.location.pathname;
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo,
-          queryParams: { prompt: 'select_account' },
-        },
-      });
-      if (error) throw error;
-    } catch (err) {
-      setAuthStatus(err.message || 'Sign-in failed.', true);
-      btn.disabled = false;
-      btn.textContent = prev;
-    }
-  });
+  bindGoogleSignIn(document.getElementById('googleSignInBtn'));
+  const signOutBtn = document.getElementById('signOutBtn');
+  if (signOutBtn) bindSignOut(signOutBtn);
+}
 
-  signOutBtn.addEventListener('click', async () => {
-    setAuthStatus('');
-    try {
-      await supabase.auth.signOut();
-      renderAuthUi(null);
-    } catch (err) {
-      setAuthStatus(err.message || 'Sign-out failed.', true);
-    }
+function initBodyEstimateUi() {
+  const toggle = document.getElementById('bodyEstimateToggle');
+  if (toggle) {
+    toggle.addEventListener('click', () => {
+      toggle.dataset.userToggled = '1';
+      bodyEstimateExpanded = !bodyEstimateExpanded;
+      syncBodyEstimateDisclosure(bodyEstimateExpanded);
+    });
+  }
+  ['weight', 'height', 'age', 'sex', 'activity'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('input', () => calc(true));
+    el.addEventListener('change', () => calc(true));
   });
 }
 
-calc();
+const hadStoredInputs = !!localStorage.getItem(BMI_INPUTS_KEY);
+restoreBmiInputs();
+initBodyEstimateUi();
+calc(hadStoredInputs || !!getActiveTarget());
+syncBodyEstimateDisclosure();
 
 (function initFoodLookup() {
   document.getElementById('lookupBtn').addEventListener('click', () => lookupFood());
@@ -1063,9 +1410,14 @@ calc();
     if (diaryViewDate > today) diaryViewDate = today;
     loadDiary();
   });
+  const retry = document.getElementById('diaryRetryBtn');
+  if (retry) retry.addEventListener('click', () => loadDiary());
 
   initSpeechUi();
   updateLogControls();
+  reorderRegions(false);
+  updateAddFoodCopy(false);
+  setExclusiveAuth(false);
 })();
 
 initAuth();
