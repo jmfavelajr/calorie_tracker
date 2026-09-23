@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" fill="none">
+  <rect width="512" height="512" rx="112" fill="#F4F7F2"/>
+  <!-- outer soft ring -->
+  <circle cx="256" cy="248" r="148" stroke="#2F9E6E" stroke-width="28" fill="none"/>
+  <!-- open gap at bottom (spotter's "catch" opening) via mask arc using two paths -->
+  <path d="M148 340 A148 148 0 0 0 364 340" stroke="#F4F7F2" stroke-width="36" stroke-linecap="round" fill="none"/>
+  <!-- inner spot / person dot -->
+  <circle cx="256" cy="220" r="36" fill="#2F9E6E"/>
+  <!-- supporting base curve (brace) -->
+  <path d="M176 320 C210 360 302 360 336 320" stroke="#2F9E6E" stroke-width="28" stroke-linecap="round" fill="none"/>
+</svg>
