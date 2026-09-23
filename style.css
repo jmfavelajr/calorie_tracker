@@ -1,26 +1,27 @@
 :root {
-  --bg: #121A17;
-  --surface: #1A2621;
-  --surface-elevated: #22332C;
-  --surface-inset: #121A17;
-  --border: #33483F;
-  --text: #F4EFE6;
-  --text-secondary: #A9B8AC;
-  --accent: #6ECF97;
-  --accent-soft: #1B3D2E;
-  --on-accent: #0E1814;
-  --success: #8FDBAE;
-  --caution: #E7A58A;
-  --danger: #D9786C;
-  --ring-track: #2C4036;
-  --glow: #6ECF97;
-  --warning: #E7A58A;
+  --bg: #F4F7F2;
+  --surface: #FFFFFF;
+  --surface-elevated: #FFFFFF;
+  --surface-inset: #FFFFFF;
+  --border: #C9D6CF;
+  --text: #1A2B24;
+  --text-secondary: #5C7368;
+  --accent: #2F9E6E;
+  --accent-soft: #E3F5EB;
+  --on-accent: #FFFFFF;
+  --success: #2F9E6E;
+  --caution: #D9895B;
+  --danger: #C4574A;
+  --ring-track: #D7E4DC;
+  --glow: #2F9E6E;
+  --warning: #D9895B;
   --radius: 16px;
   --radius-lg: 20px;
   --font: "Inter", system-ui, -apple-system, sans-serif;
   --motion: 160ms ease-out;
   --motion-row: 200ms ease-out;
-  --shadow-soft: 0 8px 24px rgba(8, 14, 12, 0.35);
+  --shadow-soft: 0 8px 24px rgba(26, 43, 36, 0.08);
+  --shadow-card: 0 1px 2px rgba(26, 43, 36, 0.06), 0 8px 24px rgba(26, 43, 36, 0.06);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -63,20 +64,39 @@ body {
   margin-bottom: 16px;
 }
 
-.wordmark {
-  font-size: 22px;
-  line-height: 28px;
-  font-weight: 600;
-  letter-spacing: -0.015em;
+.brand-lockup {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   margin-bottom: 4px;
+}
+
+.brand-mark {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  display: block;
+}
+
+.wordmark {
+  font-size: 24px;
+  line-height: 1.2;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  margin: 0;
   color: var(--text);
 }
 
 .subtitle {
   color: var(--text-secondary);
-  font-size: 13px;
-  line-height: 18px;
+  font-size: 14px;
+  line-height: 1.35;
   font-weight: 400;
+  max-width: 100%;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
 }
 
 .header-email {
@@ -156,7 +176,7 @@ body {
   padding: 20px;
 }
 
-.welcome-leaf {
+.welcome-mark, .welcome-leaf {
   display: block;
   margin-bottom: 12px;
   color: var(--accent);
@@ -279,7 +299,8 @@ input:focus-visible, select:focus-visible, button:focus-visible,
 }
 
 .btn-accent:hover:not(:disabled) {
-  filter: brightness(1.05);
+  background: #278A5F;
+  border-color: #278A5F;
 }
 
 .btn-secondary {
@@ -410,7 +431,7 @@ input:focus-visible, select:focus-visible, button:focus-visible,
   width: 280px;
   height: 280px;
   transform: translate(-50%, -55%);
-  background: radial-gradient(circle, rgba(110, 207, 151, 0.18) 0%, rgba(110, 207, 151, 0) 70%);
+  background: radial-gradient(circle, rgba(47, 158, 110, 0.10) 0%, rgba(47, 158, 110, 0) 70%);
   pointer-events: none;
   z-index: 0;
   opacity: 1;
@@ -591,6 +612,7 @@ input:focus-visible, select:focus-visible, button:focus-visible,
 
 .empty-state-mark svg {
   display: block;
+  stroke: var(--accent);
 }
 
 .empty-state-title {
@@ -1061,8 +1083,9 @@ footer {
   width: calc(100% - 32px);
   max-width: 480px;
   background: var(--surface-elevated);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  border: none;
+  box-shadow: var(--shadow-soft);
+  border-radius: 16px;
   padding: 12px 14px;
   display: flex;
   align-items: flex-start;

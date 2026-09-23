@@ -1,5 +1,5 @@
 /**
- * Calories — daily log UI
+ * Spotter — daily nutrition log UI
  * Food lookup via /api/fdc
  * Meal estimates via /api/meal-estimate (Grok)
  * Speech-to-text via Web Speech API
@@ -97,7 +97,7 @@ function emptyPlateSvg(withLeaf) {
   return `<div class="empty-state">
     <div class="empty-state-mark" aria-hidden="true">
       <div class="plate-bg">
-        <svg width="48" height="48" viewBox="0 0 48 48" fill="none" stroke="#6ECF97" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <svg width="48" height="48" viewBox="0 0 48 48" fill="none" stroke="#2F9E6E" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
           <ellipse cx="24" cy="28" rx="16" ry="8"/>
           <ellipse cx="24" cy="26" rx="10" ry="5"/>
           ${leaf}

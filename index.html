@@ -3,11 +3,13 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="Calories — daily calorie log with a rough target. Food lookup, barcode, meal estimate, and BMI/TDEE estimates.">
+  <meta name="description" content="Nutrition tracking for trainers and their clients.">
+  <meta name="theme-color" content="#F4F7F2">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <script async custom-element="amp-auto-ads" src="https://cdn.ampproject.org/v0/amp-auto-ads-0.1.js"></script>
   <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-2623662760040254"
      crossorigin="anonymous"></script>
-  <title>Calories — Daily calorie log</title>
+  <title>Spotter — Nutrition tracking for trainers and their clients</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
@@ -32,20 +34,19 @@
 
   <div class="container">
     <header class="site-header" id="siteHeader">
-      <h1 class="wordmark">Calories</h1>
-      <p class="subtitle">Daily calorie log</p>
+      <div class="brand-lockup">
+        <img class="brand-mark" src="assets/spotter-mark-inline.svg" width="24" height="24" alt="">
+        <h1 class="wordmark">Spotter</h1>
+      </div>
+      <p class="subtitle">Nutrition tracking for trainers and their clients.</p>
       <p class="header-email" id="headerEmail" hidden></p>
     </header>
 
     <div id="appStack">
       <section class="welcome-card" id="authGoogleSection" data-region="auth-google">
-        <svg class="welcome-leaf" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M12 21c0-6 4-10 9-11-1 7-5 11-9 11z"/>
-          <path d="M12 21c0-6-4-10-9-11 1 7 5 11 9 11z"/>
-          <path d="M12 21V8"/>
-        </svg>
-        <h2 class="welcome-title">Calories</h2>
-        <p class="welcome-copy">Log today with a calm ring against your rough target — sign in so your diary follows you.</p>
+        <img class="welcome-mark brand-mark" src="assets/spotter-mark-inline.svg" width="24" height="24" alt="">
+        <h2 class="welcome-title">Spotter</h2>
+        <p class="welcome-copy">Nutrition tracking for trainers and their clients. Sign in and today’s log stays on this account.</p>
         <button type="button" id="googleSignInBtn" class="btn btn-accent btn-auth">
           <span class="google-g" aria-hidden="true">G</span>
           Continue with Google
@@ -159,7 +160,7 @@
         <div class="empty-state" id="emptyToday" hidden>
           <div class="empty-state-mark" aria-hidden="true">
             <div class="plate-bg">
-              <svg width="48" height="48" viewBox="0 0 48 48" fill="none" stroke="#6ECF97" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <svg width="48" height="48" viewBox="0 0 48 48" fill="none" stroke="#2F9E6E" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
                 <ellipse cx="24" cy="28" rx="16" ry="8"/>
                 <ellipse cx="24" cy="26" rx="10" ry="5"/>
                 <path d="M28 18c2-4 7-5 9-4-1 4-4 7-8 8"/>
