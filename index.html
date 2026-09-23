@@ -3,127 +3,170 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="Free BMI, TDEE and calorie calculator with barcode and food name lookup.">
+  <meta name="description" content="Calories — daily calorie log with a rough target. Food lookup, barcode, meal estimate, and BMI/TDEE estimates.">
   <script async custom-element="amp-auto-ads" src="https://cdn.ampproject.org/v0/amp-auto-ads-0.1.js"></script>
   <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-2623662760040254"
      crossorigin="anonymous"></script>
-  <title>BMI & Calorie Calculator – Free Online Tool</title>
+  <title>Calories — Daily calorie log</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <amp-auto-ads type="adsense" data-ad-client="ca-pub-2623662760040254"></amp-auto-ads>
   <div class="container">
-    <header>
-      <h1>BMI & Calorie Calculator</h1>
-      <p class="subtitle">Body mass index, TDEE and daily calorie estimates</p>
+    <header class="site-header" id="siteHeader">
+      <h1 class="wordmark">Calories</h1>
+      <p class="subtitle">Daily calorie log</p>
+      <p class="header-email" id="headerEmail" hidden></p>
     </header>
 
-    <section class="auth-bar" id="authBar">
-      <div class="auth-signed-out" id="authSignedOut">
-        <button type="button" id="googleSignInBtn" class="btn btn-google">
+    <div id="appStack">
+      <section class="auth-bar" id="authGoogleSection" data-region="auth-google">
+        <button type="button" id="googleSignInBtn" class="btn btn-accent btn-auth">
           <span class="google-g" aria-hidden="true">G</span>
           Continue with Google
         </button>
-        <p class="auth-hint" id="authHint">Sign in to save and sync food logs across devices.</p>
-      </div>
-      <div class="auth-signed-in" id="authSignedIn" hidden>
-        <div class="auth-user">
-          <img id="authAvatar" class="auth-avatar" alt="" width="36" height="36" hidden>
-          <div class="auth-user-text">
-            <div class="auth-name" id="authName">Signed in</div>
-            <div class="auth-email" id="authEmail"></div>
+        <p class="auth-status" id="authStatus" hidden></p>
+      </section>
+
+      <section class="card diary-gate" id="diaryGate" data-region="diary-gate">
+        <h2 class="section-title">Your daily log</h2>
+        <p class="body-text">Today’s calorie log syncs to your Google account and appears here after you sign in. Nothing is saved until then.</p>
+      </section>
+
+      <section class="card today-summary" id="todaySection" data-region="today" hidden>
+        <div class="today-header">
+          <h2 class="section-title" id="diaryTitle">Today</h2>
+          <div class="diary-nav" role="group" aria-label="Choose day">
+            <button type="button" class="btn-icon" id="diaryPrev" aria-label="Previous day">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 18 9 12 15 6"/></svg>
+            </button>
+            <input type="date" id="diaryDate" class="diary-date" aria-label="Log date">
+            <button type="button" class="btn-icon" id="diaryNext" aria-label="Next day">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>
+            </button>
+            <button type="button" class="btn btn-secondary btn-today" id="diaryTodayBtn">Today</button>
           </div>
         </div>
-        <button type="button" id="signOutBtn" class="btn btn-secondary btn-small">Sign out</button>
-      </div>
-      <p class="auth-status" id="authStatus" hidden></p>
-    </section>
-
-    <section class="diary" id="diarySection" hidden>
-      <div class="diary-header">
-        <h2 id="diaryTitle">Today</h2>
-        <div class="diary-total" id="diaryTotal">0 kcal</div>
-      </div>
-      <div class="diary-nav">
-        <button type="button" class="btn-nav" id="diaryPrev" aria-label="Previous day">‹</button>
-        <input type="date" id="diaryDate" class="diary-date">
-        <button type="button" class="btn-nav" id="diaryNext" aria-label="Next day">›</button>
-        <button type="button" class="btn-nav btn-today" id="diaryTodayBtn">Today</button>
-      </div>
-      <p class="diary-sub" id="diarySub">No foods logged yet.</p>
-      <ul class="diary-list" id="diaryList"></ul>
-    </section>
-
-    <div class="form">
-      <div class="form-row">
-        <div class="form-group"><label>Weight (kg)</label><input type="number" id="weight" value="70" step="0.1" oninput="calc()"></div>
-        <div class="form-group"><label>Height (cm)</label><input type="number" id="height" value="175" step="0.1" oninput="calc()"></div>
-      </div>
-      <div class="form-row">
-        <div class="form-group"><label>Age</label><input type="number" id="age" value="30" oninput="calc()"></div>
-        <div class="form-group"><label>Sex</label>
-          <select id="sex" onchange="calc()"><option value="m">Male</option><option value="f">Female</option></select>
+        <div class="today-total-block" id="todayTotalBlock">
+          <div class="day-total" id="diaryTotal">0</div>
+          <div class="day-total-unit">kcal</div>
         </div>
-      </div>
-      <div class="form-group"><label>Activity Level</label>
-        <select id="activity" onchange="calc()">
-          <option value="1.2">Sedentary</option>
-          <option value="1.375">Lightly active</option>
-          <option value="1.55" selected>Moderately active</option>
-          <option value="1.725">Very active</option>
-          <option value="1.9">Extra active</option>
-        </select>
-      </div>
-    </div>
-    <div class="result" id="result"></div>
-
-    <section class="food-lookup">
-      <h2>Food calorie lookup</h2>
-      <p class="section-desc">Scan a barcode, look up a packaged food, or <strong>estimate a meal</strong> from a phrase (e.g. <em>eggs benedict at IHOP</em>). Use the mic to dictate. Estimates use AI and are approximate.</p>
-
-      <div class="form food-form">
-        <div class="btn-row">
-          <button type="button" id="scanBtn" class="btn">Scan barcode</button>
-          <button type="button" id="stopScanBtn" class="btn btn-secondary" hidden>Stop camera</button>
-        </div>
-
-        <div id="scannerWrap" class="scanner-wrap" hidden>
-          <div id="reader"></div>
-          <p class="hint scan-hint">Point your camera at a UPC/EAN barcode</p>
-        </div>
-
-        <div class="form-group">
-          <label for="foodQuery">Barcode, food name, or meal phrase</label>
-          <div class="query-row">
-            <input type="text" id="foodQuery" autocomplete="off" placeholder="04963406 · 1 cup rice · eggs benedict at IHOP">
-            <button type="button" id="micBtn" class="btn-mic" title="Speak meal or food name" aria-label="Start voice input">🎤</button>
+        <div class="progress-wrap" id="progressWrap">
+          <div class="progress-track" aria-hidden="true">
+            <div class="progress-fill" id="progressFill"></div>
           </div>
-          <p class="hint mic-status" id="micStatus" hidden></p>
+          <p class="progress-text" id="progressText">Set a rough target below to see progress.</p>
         </div>
-        <div class="btn-row lookup-actions">
-          <button type="button" id="lookupBtn" class="btn btn-secondary">Look up</button>
-          <button type="button" id="estimateBtn" class="btn">Estimate meal</button>
+        <p class="diary-sub" id="diarySub" role="status">Nothing logged for this day.</p>
+        <p class="today-error" id="todayError" hidden>
+          <span class="alert-marker" aria-hidden="true"></span>
+          Couldn’t load this day.
+          <button type="button" class="btn-link" id="diaryRetryBtn">Try again</button>
+        </p>
+      </section>
+
+      <section class="card add-food" id="addFoodSection" data-region="add-food">
+        <h2 class="section-title" id="addFoodTitle">Food calorie lookup</h2>
+        <p class="helper" id="addFoodHelper">You can also scan a barcode, estimate a meal, or use the mic. Logging to your diary needs sign-in.</p>
+
+        <div class="form food-form">
+          <div class="form-group">
+            <label for="foodQuery">Food name or barcode</label>
+            <div class="query-row">
+              <input type="text" id="foodQuery" autocomplete="off" placeholder="1 cup rice" enterkeyhint="search">
+              <button type="button" id="micBtn" class="btn-icon btn-mic" aria-label="Dictate food" aria-pressed="false" title="Dictate food">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                  <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                  <line x1="12" y1="19" x2="12" y2="23"/>
+                  <line x1="8" y1="23" x2="16" y2="23"/>
+                </svg>
+              </button>
+            </div>
+            <p class="hint mic-status" id="micStatus" hidden></p>
+          </div>
+
+          <div class="btn-row lookup-actions" role="group" aria-label="Add food methods">
+            <button type="button" id="lookupBtn" class="btn btn-secondary">Look up</button>
+            <button type="button" id="scanBtn" class="btn btn-secondary">Scan</button>
+            <button type="button" id="estimateBtn" class="btn btn-secondary">Estimate</button>
+            <button type="button" id="stopScanBtn" class="btn btn-secondary" hidden>Stop camera</button>
+          </div>
+
+          <div id="scannerWrap" class="scanner-wrap" hidden>
+            <div id="reader"></div>
+            <p class="hint scan-hint">Point your camera at a UPC/EAN barcode</p>
+          </div>
         </div>
-        <p class="hint">Look up = databases · Estimate meal = AI for restaurant/home plates · Mic fills the box only</p>
-      </div>
 
-      <div class="result food-result" id="foodResult" hidden></div>
+        <div class="result food-result" id="foodResult" hidden></div>
 
-      <div class="log-panel" id="logPanel" hidden>
-        <div class="form-row log-row">
+        <div class="log-panel" id="logPanel" hidden>
           <div class="form-group">
             <label for="logQty">Quantity (servings)</label>
-            <input type="number" id="logQty" value="1" min="0.25" step="0.25">
+            <input type="number" id="logQty" value="1" min="0.25" step="0.25" inputmode="decimal">
+            <p class="hint qty-error" id="qtyError" hidden>Enter a quantity.</p>
           </div>
+          <button type="button" id="logCaloriesBtn" class="btn btn-accent" disabled>Add</button>
+          <p class="hint" id="logHint">Sign in and look up a food to log it.</p>
+          <p class="log-success" id="logSuccess" hidden role="status" aria-live="polite"></p>
         </div>
-        <button type="button" id="logCaloriesBtn" class="btn" disabled>Log calories</button>
-        <p class="hint" id="logHint">Sign in and look up a food to log it.</p>
-        <p class="log-success" id="logSuccess" hidden></p>
-      </div>
-    </section>
+      </section>
+
+      <section class="card diary" id="diarySection" data-region="diary-list" hidden>
+        <h2 class="section-title visually-hidden">Day’s entries</h2>
+        <ul class="diary-list" id="diaryList"></ul>
+      </section>
+
+      <section class="card body-estimate" id="bodyEstimateSection" data-region="body-estimate">
+        <button type="button" class="disclosure" id="bodyEstimateToggle" aria-expanded="true" aria-controls="bodyEstimatePanel">
+          <span class="disclosure-label" id="bodyEstimateSummary">Rough body estimate</span>
+          <svg class="disclosure-chevron" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+        <div id="bodyEstimatePanel" class="body-estimate-panel">
+          <p class="helper">Rough estimate only — not a plan or medical advice.</p>
+          <div class="form" id="bmiForm">
+            <div class="form-group">
+              <label for="weight">Weight (kg)</label>
+              <input type="number" id="weight" value="70" step="0.1" inputmode="decimal">
+            </div>
+            <div class="form-group">
+              <label for="height">Height (cm)</label>
+              <input type="number" id="height" value="175" step="0.1" inputmode="decimal">
+            </div>
+            <div class="form-group">
+              <label for="age">Age</label>
+              <input type="number" id="age" value="30" inputmode="numeric">
+            </div>
+            <div class="form-group">
+              <label for="sex">Sex</label>
+              <select id="sex">
+                <option value="m">Male</option>
+                <option value="f">Female</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="activity">Activity Level</label>
+              <select id="activity">
+                <option value="1.2">Sedentary</option>
+                <option value="1.375">Lightly active</option>
+                <option value="1.55" selected>Moderately active</option>
+                <option value="1.725">Very active</option>
+                <option value="1.9">Extra active</option>
+              </select>
+            </div>
+          </div>
+          <div class="result" id="result"></div>
+        </div>
+      </section>
+
+      <section class="auth-signout" id="authSignOutSection" data-region="auth-signout" hidden>
+        <p class="auth-status" id="signOutStatus" hidden></p>
+      </section>
+    </div>
 
     <footer>
-      <p>BMI/TDEE are approximate. Packaged food from USDA / API Ninjas / Calorie API. Meal estimates are AI approximations, not lab data.</p>
+      <p>Estimates only — not medical or dietary advice. BMI/TDEE and meal estimates are approximate. Packaged food from USDA / API Ninjas / Calorie API.</p>
     </footer>
   </div>
 
