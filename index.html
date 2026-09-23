@@ -8,10 +8,28 @@
   <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-2623662760040254"
      crossorigin="anonymous"></script>
   <title>Calories — Daily calorie log</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <amp-auto-ads type="adsense" data-ad-client="ca-pub-2623662760040254"></amp-auto-ads>
+
+  <div id="stickyToday" class="sticky-today" hidden aria-hidden="true">
+    <div class="sticky-inner" id="stickyInner" role="button" tabindex="0" aria-label="Back to today summary">
+      <div class="sticky-ring-wrap" aria-hidden="true">
+        <svg class="sticky-ring-svg" viewBox="0 0 28 28" width="28" height="28">
+          <circle class="sticky-ring-track" cx="14" cy="14" r="12"></circle>
+          <circle id="stickyRing" class="sticky-ring-progress" cx="14" cy="14" r="12"
+            stroke-dasharray="75.4" stroke-dashoffset="75.4"></circle>
+        </svg>
+      </div>
+      <span class="sticky-label" id="stickyLabel">—</span>
+      <button type="button" class="sticky-add" id="stickyAddBtn">Add</button>
+    </div>
+  </div>
+
   <div class="container">
     <header class="site-header" id="siteHeader">
       <h1 class="wordmark">Calories</h1>
@@ -20,11 +38,19 @@
     </header>
 
     <div id="appStack">
-      <section class="auth-bar" id="authGoogleSection" data-region="auth-google">
+      <section class="welcome-card" id="authGoogleSection" data-region="auth-google">
+        <svg class="welcome-leaf" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12 21c0-6 4-10 9-11-1 7-5 11-9 11z"/>
+          <path d="M12 21c0-6-4-10-9-11 1 7 5 11 9 11z"/>
+          <path d="M12 21V8"/>
+        </svg>
+        <h2 class="welcome-title">Calories</h2>
+        <p class="welcome-copy">Log today with a calm ring against your rough target — sign in so your diary follows you.</p>
         <button type="button" id="googleSignInBtn" class="btn btn-accent btn-auth">
           <span class="google-g" aria-hidden="true">G</span>
           Continue with Google
         </button>
+        <button type="button" class="welcome-secondary" id="welcomeSecondary">Set a rough target</button>
         <p class="auth-status" id="authStatus" hidden></p>
       </section>
 
@@ -47,16 +73,26 @@
             <button type="button" class="btn btn-secondary btn-today" id="diaryTodayBtn">Today</button>
           </div>
         </div>
-        <div class="today-total-block" id="todayTotalBlock">
-          <div class="day-total" id="diaryTotal">0</div>
-          <div class="day-total-unit">kcal</div>
-        </div>
-        <div class="progress-wrap" id="progressWrap">
-          <div class="progress-track" aria-hidden="true">
-            <div class="progress-fill" id="progressFill"></div>
+
+        <div class="hero-ring-area" id="progressWrap">
+          <div class="hero-glow" id="heroGlow" aria-hidden="true"></div>
+          <div class="progress-ring-wrap">
+            <svg class="progress-ring-svg" viewBox="0 0 168 168" width="168" height="168" aria-hidden="true">
+              <circle id="ringTrack" class="ring-track-circle" cx="84" cy="84" r="78"></circle>
+              <circle id="ringProgress" class="ring-progress-circle" cx="84" cy="84" r="78"
+                stroke-dasharray="490.088" stroke-dashoffset="490.088"></circle>
+            </svg>
+            <div class="ring-center">
+              <div class="day-total" id="diaryTotal">0</div>
+              <div class="ring-caption" id="ringCaption">kcal left</div>
+            </div>
           </div>
-          <p class="progress-text" id="progressText">Set a rough target below to see progress.</p>
+          <p class="ring-meta" id="ringMeta">Set a rough target below to see progress.</p>
+          <!-- compat: hidden progress fill retained for any legacy refs -->
+          <div id="progressFill" class="visually-hidden" aria-hidden="true"></div>
+          <p id="progressText" class="visually-hidden" aria-hidden="true"></p>
         </div>
+
         <p class="diary-sub" id="diarySub" role="status">Nothing logged for this day.</p>
         <p class="today-error" id="todayError" hidden>
           <span class="alert-marker" aria-hidden="true"></span>
@@ -67,6 +103,11 @@
 
       <section class="card add-food" id="addFoodSection" data-region="add-food">
         <h2 class="section-title" id="addFoodTitle">Food calorie lookup</h2>
+        <div class="method-chips" role="group" aria-label="Add food methods">
+          <button type="button" class="method-chip" id="methodChipScan" aria-pressed="false">Scan</button>
+          <button type="button" class="method-chip selected" id="methodChipLookup" aria-pressed="true">Look up</button>
+          <button type="button" class="method-chip" id="methodChipEstimate" aria-pressed="false">Estimate</button>
+        </div>
         <p class="helper" id="addFoodHelper">You can also scan a barcode, estimate a meal, or use the mic. Logging to your diary needs sign-in.</p>
 
         <div class="form food-form">
@@ -86,12 +127,12 @@
             <p class="hint mic-status" id="micStatus" hidden></p>
           </div>
 
-          <div class="btn-row lookup-actions" role="group" aria-label="Add food methods">
+          <div class="btn-row lookup-actions lookup-actions-legacy" role="group" aria-label="Add food methods (legacy)">
             <button type="button" id="lookupBtn" class="btn btn-secondary">Look up</button>
             <button type="button" id="scanBtn" class="btn btn-secondary">Scan</button>
             <button type="button" id="estimateBtn" class="btn btn-secondary">Estimate</button>
-            <button type="button" id="stopScanBtn" class="btn btn-secondary" hidden>Stop camera</button>
           </div>
+          <button type="button" id="stopScanBtn" class="btn btn-secondary" hidden>Stop camera</button>
 
           <div id="scannerWrap" class="scanner-wrap" hidden>
             <div id="reader"></div>
@@ -115,6 +156,20 @@
 
       <section class="card diary" id="diarySection" data-region="diary-list" hidden>
         <h2 class="section-title visually-hidden">Day’s entries</h2>
+        <div class="empty-state" id="emptyToday" hidden>
+          <div class="empty-state-mark" aria-hidden="true">
+            <div class="plate-bg">
+              <svg width="48" height="48" viewBox="0 0 48 48" fill="none" stroke="#6ECF97" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <ellipse cx="24" cy="28" rx="16" ry="8"/>
+                <ellipse cx="24" cy="26" rx="10" ry="5"/>
+                <path d="M28 18c2-4 7-5 9-4-1 4-4 7-8 8"/>
+                <path d="M29 20c1.5-2 4-3 5.5-2.5"/>
+              </svg>
+            </div>
+          </div>
+          <p class="empty-state-title">Nothing logged yet</p>
+          <p class="empty-state-copy">Add a food above to start today’s log.</p>
+        </div>
         <ul class="diary-list" id="diaryList"></ul>
       </section>
 
@@ -168,6 +223,14 @@
     <footer>
       <p>Estimates only — not medical or dietary advice. BMI/TDEE and meal estimates are approximate. Packaged food from USDA / API Ninjas / Calorie API.</p>
     </footer>
+  </div>
+
+  <div id="resultToast" class="result-toast" role="status" aria-live="polite" hidden>
+    <span class="toast-dot success" id="toastDot" aria-hidden="true"></span>
+    <div class="toast-body">
+      <div class="toast-title" id="toastTitle"></div>
+      <div class="toast-meta" id="toastMeta" hidden></div>
+    </div>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.1/dist/umd/supabase.min.js"></script>

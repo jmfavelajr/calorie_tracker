@@ -29,6 +29,174 @@ let diaryLoading = false;
 let lastDiaryRows = [];
 let bodyEstimateExpanded = true;
 
+const RING_C = 2 * Math.PI * 78; // ~490.088
+const STICKY_C = 2 * Math.PI * 12; // ~75.4
+let ringHasPainted = false;
+let stickyObserver = null;
+let toastTimer = null;
+let selectedMethod = 'lookup'; // scan | lookup | estimate
+
+function prefersReducedMotion() {
+  return window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
+function setRingProgress(circle, circumference, pct, over, animateMs) {
+  if (!circle) return;
+  const clamped = Math.max(0, Math.min(100, pct));
+  const offset = circumference * (1 - clamped / 100);
+  const reduce = prefersReducedMotion();
+  if (reduce) {
+    circle.style.transition = 'none';
+  } else if (animateMs != null) {
+    circle.style.transition = `stroke-dashoffset ${animateMs}ms ease-out, stroke 200ms ease-out`;
+  }
+  circle.style.strokeDasharray = String(circumference);
+  circle.style.strokeDashoffset = String(offset);
+  circle.classList.toggle('over', !!over);
+}
+
+function showToast(title, meta, status) {
+  const toast = document.getElementById('resultToast');
+  const dot = document.getElementById('toastDot');
+  const titleEl = document.getElementById('toastTitle');
+  const metaEl = document.getElementById('toastMeta');
+  if (!toast || !titleEl) return;
+  clearTimeout(toastTimer);
+  toast.hidden = false;
+  toast.classList.remove('hiding');
+  titleEl.textContent = title || '';
+  if (metaEl) {
+    if (meta) {
+      metaEl.hidden = false;
+      metaEl.textContent = meta;
+    } else {
+      metaEl.hidden = true;
+      metaEl.textContent = '';
+    }
+  }
+  if (dot) {
+    dot.className = 'toast-dot ' + (status === 'caution' ? 'caution' : status === 'danger' ? 'danger' : 'success');
+  }
+  // force reflow for animation
+  void toast.offsetWidth;
+  toast.classList.add('visible');
+  toastTimer = setTimeout(() => {
+    toast.classList.add('hiding');
+    toast.classList.remove('visible');
+    setTimeout(() => {
+      toast.hidden = true;
+      toast.classList.remove('hiding');
+    }, prefersReducedMotion() ? 0 : 160);
+  }, 2400);
+}
+
+function emptyPlateSvg(withLeaf) {
+  const leaf = withLeaf
+    ? `<path d="M28 18c2-4 7-5 9-4-1 4-4 7-8 8"/><path d="M29 20c1.5-2 4-3 5.5-2.5"/>`
+    : '';
+  return `<div class="empty-state">
+    <div class="empty-state-mark" aria-hidden="true">
+      <div class="plate-bg">
+        <svg width="48" height="48" viewBox="0 0 48 48" fill="none" stroke="#6ECF97" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <ellipse cx="24" cy="28" rx="16" ry="8"/>
+          <ellipse cx="24" cy="26" rx="10" ry="5"/>
+          ${leaf}
+        </svg>
+      </div>
+    </div>
+    <p class="empty-state-title">${withLeaf ? 'Nothing logged yet' : 'No foods found'}</p>
+    <p class="empty-state-copy">${withLeaf ? 'Add a food above to start today’s log.' : 'Try another name, scan a barcode, or estimate the meal.'}</p>
+  </div>`;
+}
+
+function setMethodChip(method) {
+  selectedMethod = method;
+  const map = {
+    scan: 'methodChipScan',
+    lookup: 'methodChipLookup',
+    estimate: 'methodChipEstimate',
+  };
+  Object.keys(map).forEach((key) => {
+    const el = document.getElementById(map[key]);
+    if (!el) return;
+    const on = key === method;
+    el.classList.toggle('selected', on);
+    el.setAttribute('aria-pressed', on ? 'true' : 'false');
+  });
+}
+
+function updateStickyVisibility(show) {
+  const sticky = document.getElementById('stickyToday');
+  if (!sticky) return;
+  if (!currentUser) {
+    sticky.hidden = true;
+    sticky.classList.remove('visible');
+    sticky.setAttribute('aria-hidden', 'true');
+    return;
+  }
+  if (show) {
+    sticky.hidden = false;
+    sticky.setAttribute('aria-hidden', 'false');
+    void sticky.offsetWidth;
+    sticky.classList.add('visible');
+  } else {
+    sticky.classList.remove('visible');
+    sticky.setAttribute('aria-hidden', 'true');
+    // keep in DOM for transition; hide after
+    setTimeout(() => {
+      if (!sticky.classList.contains('visible')) sticky.hidden = true;
+    }, prefersReducedMotion() ? 0 : 180);
+  }
+}
+
+function initStickyObserver() {
+  const hero = document.getElementById('todaySection');
+  const sticky = document.getElementById('stickyToday');
+  if (!hero || !sticky || stickyObserver) return;
+  stickyObserver = new IntersectionObserver(
+    (entries) => {
+      const entry = entries[0];
+      if (!currentUser || hero.hidden) {
+        updateStickyVisibility(false);
+        return;
+      }
+      updateStickyVisibility(!(entry && entry.isIntersecting));
+    },
+    { threshold: 0, rootMargin: '0px' }
+  );
+  stickyObserver.observe(hero);
+
+  const addBtn = document.getElementById('stickyAddBtn');
+  const inner = document.getElementById('stickyInner');
+  if (addBtn && !addBtn.dataset.bound) {
+    addBtn.dataset.bound = '1';
+    addBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const section = document.getElementById('addFoodSection');
+      if (section) section.scrollIntoView({ behavior: prefersReducedMotion() ? 'auto' : 'smooth', block: 'start' });
+    });
+  }
+  if (inner && !inner.dataset.bound) {
+    inner.dataset.bound = '1';
+    const goHero = () => {
+      const section = document.getElementById('todaySection');
+      if (section) section.scrollIntoView({ behavior: prefersReducedMotion() ? 'auto' : 'smooth', block: 'start' });
+    };
+    inner.addEventListener('click', (e) => {
+      if (e.target && e.target.id === 'stickyAddBtn') return;
+      goHero();
+    });
+    inner.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        goHero();
+      }
+    });
+  }
+}
+
+
+
 const REGION_ORDER_SIGNED_OUT = [
   'auth-google',
   'diary-gate',
@@ -219,50 +387,110 @@ function expandBodyEstimateAndFocus() {
 }
 
 function updateProgressUi(sum) {
+  const ring = document.getElementById('ringProgress');
+  const stickyRing = document.getElementById('stickyRing');
+  const totalEl = document.getElementById('diaryTotal');
+  const caption = document.getElementById('ringCaption');
+  const meta = document.getElementById('ringMeta');
+  const stickyLabel = document.getElementById('stickyLabel');
+  const wrap = document.getElementById('progressWrap');
   const fill = document.getElementById('progressFill');
   const text = document.getElementById('progressText');
-  const wrap = document.getElementById('progressWrap');
-  if (!fill || !text || !wrap) return;
+  if (!wrap) return;
+
+  const animateMs = prefersReducedMotion() ? 0 : (ringHasPainted ? 320 : 480);
+  const glow = document.getElementById('heroGlow');
 
   if (diaryLoading) {
-    fill.style.width = '0%';
-    fill.className = 'progress-fill';
-    text.textContent = '';
-    wrap.hidden = false;
+    if (totalEl) {
+      totalEl.textContent = '—';
+      totalEl.classList.remove('over');
+    }
+    if (caption) {
+      caption.textContent = '';
+      caption.classList.remove('over');
+    }
+    if (meta) meta.textContent = '';
+    setRingProgress(ring, RING_C, 0, false, 0);
+    setRingProgress(stickyRing, STICKY_C, 0, false, 0);
+    if (stickyLabel) stickyLabel.textContent = '—';
+    if (fill) fill.style.width = '0%';
+    if (text) text.textContent = '';
     return;
   }
 
   if (diaryLoadError) {
-    fill.style.width = '0%';
-    fill.className = 'progress-fill';
-    text.textContent = '';
+    setRingProgress(ring, RING_C, 0, false, 0);
+    setRingProgress(stickyRing, STICKY_C, 0, false, 0);
+    if (caption) caption.textContent = '';
+    if (meta) meta.textContent = '';
+    if (stickyLabel) stickyLabel.textContent = '—';
     return;
   }
 
   const target = getActiveTarget();
   if (!target) {
-    fill.style.width = '0%';
-    fill.className = 'progress-fill';
-    text.innerHTML =
-      'Set a rough target below to see progress. ' +
-      '<button type="button" class="progress-link" id="openTargetLink">Set target</button>';
-    const link = document.getElementById('openTargetLink');
-    if (link) link.addEventListener('click', expandBodyEstimateAndFocus);
+    setRingProgress(ring, RING_C, 0, false, animateMs);
+    setRingProgress(stickyRing, STICKY_C, 0, false, animateMs);
+    if (totalEl) {
+      totalEl.textContent = formatKcal(sum);
+      totalEl.classList.remove('over');
+    }
+    if (caption) {
+      caption.textContent = 'kcal';
+      caption.classList.remove('over');
+    }
+    if (meta) {
+      meta.innerHTML =
+        'Set a rough target below to see progress. ' +
+        '<button type="button" class="progress-link" id="openTargetLink">Set target</button>';
+      const link = document.getElementById('openTargetLink');
+      if (link) link.addEventListener('click', expandBodyEstimateAndFocus);
+    }
+    if (stickyLabel) stickyLabel.textContent = formatKcal(sum) + ' eaten';
+    if (glow && !prefersReducedMotion()) glow.style.opacity = '1';
+    ringHasPainted = true;
     return;
   }
 
-  const pct = Math.min(100, Math.round((sum / target.kcal) * 100));
-  const over = sum > target.kcal;
-  fill.style.width = (over ? 100 : pct) + '%';
-  fill.className = 'progress-fill' + (over ? ' over' : sum > 0 ? ' under' : '');
+  const pctRaw = (sum / target.kcal) * 100;
+  const over = sum >= target.kcal;
+  const pct = over ? 100 : Math.max(0, Math.min(100, pctRaw));
+  const remaining = Math.max(0, Math.round(target.kcal - sum));
+  const overAmt = Math.max(0, Math.round(sum - target.kcal));
 
-  if (over) {
-    const amt = Math.round(sum - target.kcal);
-    text.textContent = `${formatKcal(sum)} of ${formatKcal(target.kcal)} kcal · ${formatKcal(amt)} over target`;
-  } else {
-    text.textContent = `${formatKcal(sum)} of ${formatKcal(target.kcal)} kcal`;
+  setRingProgress(ring, RING_C, pct, over, animateMs);
+  setRingProgress(stickyRing, STICKY_C, pct, over, animateMs);
+
+  if (totalEl) {
+    totalEl.textContent = over ? formatKcal(overAmt) : formatKcal(remaining);
+    totalEl.classList.toggle('over', over);
   }
+  if (caption) {
+    caption.textContent = over ? 'kcal over' : 'kcal left';
+    caption.classList.toggle('over', over);
+  }
+  if (meta) {
+    meta.textContent = formatKcal(target.kcal) + ' target · ' + formatKcal(sum) + ' eaten';
+  }
+  if (stickyLabel) {
+    stickyLabel.textContent = over
+      ? (formatKcal(overAmt) + ' over')
+      : (formatKcal(remaining) + ' left');
+  }
+  if (fill) {
+    fill.style.width = pct + '%';
+    fill.className = 'progress-fill' + (over ? ' over' : sum > 0 ? ' under' : '');
+  }
+  if (text) {
+    text.textContent = over
+      ? `${formatKcal(sum)} of ${formatKcal(target.kcal)} kcal · ${formatKcal(overAmt)} over target`
+      : `${formatKcal(sum)} of ${formatKcal(target.kcal)} kcal`;
+  }
+  if (glow) glow.style.opacity = '1';
+  ringHasPainted = true;
 }
+
 
 function calc(persistTargets) {
   const w = parseFloat(document.getElementById('weight').value) || 0;
@@ -315,6 +543,12 @@ function calc(persistTargets) {
 function showFoodResult(html, isError) {
   const el = document.getElementById('foodResult');
   el.hidden = false;
+  // Empty lookup → geometric empty plate (no emoji)
+  if (isError && typeof html === 'string' && /no match|no foods|no estimate returned/i.test(html)) {
+    el.classList.remove('error', 'loading-msg');
+    el.innerHTML = emptyPlateSvg(false);
+    return;
+  }
   el.classList.toggle('error', !!isError);
   const isCarousel = !isError && html && html.indexOf('result-carousel') !== -1;
   el.classList.toggle('loading-msg', !isError && !isCarousel);
@@ -681,15 +915,22 @@ function clearDiaryUi() {
   const total = document.getElementById('diaryTotal');
   const sub = document.getElementById('diarySub');
   const err = document.getElementById('todayError');
+  const emptyToday = document.getElementById('emptyToday');
   if (todaySection) todaySection.hidden = true;
   if (listSection) listSection.hidden = true;
   if (list) list.innerHTML = '';
-  if (total) total.textContent = '0';
+  if (total) {
+    total.textContent = '0';
+    total.classList.remove('over');
+  }
   if (sub) sub.textContent = '';
   if (err) err.hidden = true;
+  if (emptyToday) emptyToday.hidden = true;
   lastDiaryRows = [];
   diaryLoadError = false;
   diaryLoading = false;
+  ringHasPainted = false;
+  updateStickyVisibility(false);
 }
 
 function renderDiary(rows) {
@@ -714,14 +955,20 @@ function renderDiary(rows) {
   totalEl.textContent = formatKcal(sum);
   updateProgressUi(sum);
 
+  const emptyToday = document.getElementById('emptyToday');
+
   if (!items.length) {
-    sub.textContent = 'Nothing logged for this day.';
+    if (sub) sub.textContent = '';
     list.innerHTML = '';
-    if (listSection) listSection.hidden = true;
+    if (listSection) {
+      listSection.hidden = false;
+    }
+    if (emptyToday) emptyToday.hidden = false;
     return;
   }
 
-  sub.textContent = items.length + (items.length === 1 ? ' item' : ' items');
+  if (emptyToday) emptyToday.hidden = true;
+  if (sub) sub.textContent = items.length + (items.length === 1 ? ' item' : ' items');
   if (listSection) listSection.hidden = false;
   list.innerHTML = items.map((r) => {
     const qty = r.quantity != null ? r.quantity : 1;
@@ -768,6 +1015,8 @@ async function loadDiary() {
   if (totalEl) totalEl.textContent = '—';
   if (list) list.innerHTML = '';
   if (listSection) listSection.hidden = true;
+  const emptyToday = document.getElementById('emptyToday');
+  if (emptyToday) emptyToday.hidden = true;
   updateProgressUi(0);
 
   const { start, end } = dayBoundsIso(diaryViewDate);
@@ -881,12 +1130,8 @@ function updateLogControls() {
 }
 
 function showLogSuccess(msg) {
-  const el = document.getElementById('logSuccess');
-  if (!el) return;
-  el.hidden = false;
-  el.textContent = msg;
-  clearTimeout(showLogSuccess._t);
-  showLogSuccess._t = setTimeout(() => { el.hidden = true; }, 4000);
+  // Pass 2: route inline success to toast (compat shim)
+  showToast(msg || 'Added', '', 'success');
 }
 
 async function logCalories() {
@@ -938,7 +1183,14 @@ async function logCalories() {
     const { error } = await supabase.from('food_logs').insert(row);
     if (error) throw error;
 
-    showLogSuccess('Added.');
+    {
+      const prior = (lastDiaryRows || []).reduce((a, r) => a + (Number(r.kcal_logged) || 0), 0);
+      const after = prior + kcalLogged;
+      const target = getActiveTarget();
+      const crossed = target && after >= target.kcal;
+      const name = (food && food.name) ? String(food.name) : 'Food';
+      showToast('Added · ' + name, formatKcal(kcalLogged) + ' kcal', crossed ? 'caution' : 'success');
+    }
     logCooldownedUntil = Date.now() + LOG_COOLDOWN_MS;
     setTimeout(updateLogControls, LOG_COOLDOWN_MS + 50);
 
@@ -954,12 +1206,7 @@ async function logCalories() {
     if (q) q.focus();
   } catch (err) {
     const msg = err && err.message ? err.message : 'Log failed';
-    const success = document.getElementById('logSuccess');
-    if (success) {
-      success.hidden = false;
-      success.textContent = msg;
-      setTimeout(() => { success.hidden = true; }, 5000);
-    }
+    showToast(msg, '', 'danger');
   } finally {
     btn.textContent = prevLabel;
     updateLogControls();
@@ -1236,6 +1483,7 @@ function renderAuthUi(user) {
     syncBodyEstimateDisclosure(true);
     updateLogControls();
     clearDiaryUi();
+    updateStickyVisibility(false);
     return;
   }
 
@@ -1256,6 +1504,7 @@ function renderAuthUi(user) {
   }
   updateLogControls();
   diaryViewDate = startOfLocalDay(new Date());
+  initStickyObserver();
   loadDiary();
 }
 
@@ -1388,14 +1637,41 @@ calc(hadStoredInputs || !!getActiveTarget());
 syncBodyEstimateDisclosure();
 
 (function initFoodLookup() {
-  document.getElementById('lookupBtn').addEventListener('click', () => lookupFood());
-  document.getElementById('estimateBtn').addEventListener('click', () => estimateMeal());
-  document.getElementById('scanBtn').addEventListener('click', startScanner);
+  document.getElementById('lookupBtn').addEventListener('click', () => {
+    setMethodChip('lookup');
+    lookupFood();
+  });
+  document.getElementById('estimateBtn').addEventListener('click', () => {
+    setMethodChip('estimate');
+    estimateMeal();
+  });
+  document.getElementById('scanBtn').addEventListener('click', () => {
+    setMethodChip('scan');
+    startScanner();
+  });
   document.getElementById('stopScanBtn').addEventListener('click', () => stopScanner());
+
+  const chipScan = document.getElementById('methodChipScan');
+  const chipLookup = document.getElementById('methodChipLookup');
+  const chipEstimate = document.getElementById('methodChipEstimate');
+  if (chipScan) chipScan.addEventListener('click', () => { setMethodChip('scan'); startScanner(); });
+  if (chipLookup) chipLookup.addEventListener('click', () => {
+    setMethodChip('lookup');
+    const q = (document.getElementById('foodQuery').value || '').trim();
+    if (q) lookupFood();
+  });
+  if (chipEstimate) chipEstimate.addEventListener('click', () => {
+    setMethodChip('estimate');
+    const q = (document.getElementById('foodQuery').value || '').trim();
+    if (q) estimateMeal();
+  });
+  setMethodChip('lookup');
+
   document.getElementById('foodQuery').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
       e.preventDefault();
-      lookupFood();
+      if (selectedMethod === 'estimate') estimateMeal();
+      else lookupFood();
     }
   });
   document.getElementById('logCaloriesBtn').addEventListener('click', () => logCalories());
@@ -1414,6 +1690,14 @@ syncBodyEstimateDisclosure();
   if (retry) retry.addEventListener('click', () => loadDiary());
 
   initSpeechUi();
+  const welcomeSecondary = document.getElementById('welcomeSecondary');
+  if (welcomeSecondary) {
+    welcomeSecondary.addEventListener('click', () => {
+      expandBodyEstimateAndFocus();
+      const section = document.getElementById('bodyEstimateSection');
+      if (section) section.scrollIntoView({ behavior: prefersReducedMotion() ? 'auto' : 'smooth', block: 'start' });
+    });
+  }
   updateLogControls();
   reorderRegions(false);
   updateAddFoodCopy(false);
